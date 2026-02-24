@@ -1,0 +1,4 @@
+# Evaluation test cases for the OpenEMR AI agent.
+# Each case defines a user query and expected behavior.
+
+test_cases: []

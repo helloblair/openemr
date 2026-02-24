@@ -1,19 +1,12 @@
 """Streamlit chat UI for interacting with the OpenEMR AI agent."""
 
-import asyncio
-import sys
+import os
 import uuid
-from pathlib import Path
 
-# Ensure the agent package root is on sys.path so `src.*` imports resolve
-# when running via: cd agent && streamlit run frontend/streamlit_app.py
-_AGENT_ROOT = str(Path(__file__).resolve().parent.parent)
-if _AGENT_ROOT not in sys.path:
-    sys.path.insert(0, _AGENT_ROOT)
-
+import requests
 import streamlit as st
 
-from src.agent.graph import run_agent
+AGENT_API_URL = os.environ.get("AGENT_API_URL", "http://localhost:8400")
 
 # ── Page config ──────────────────────────────────────────────────────────────
 
@@ -60,12 +53,30 @@ if prompt := st.chat_input("Ask the healthcare agent…"):
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Get agent response
+    # Get agent response via FastAPI backend
     with st.chat_message("assistant"):
         with st.spinner("Thinking…"):
-            response = asyncio.run(
-                run_agent(prompt, thread_id=st.session_state.thread_id)
-            )
+            try:
+                resp = requests.post(
+                    f"{AGENT_API_URL}/chat",
+                    json={
+                        "message": prompt,
+                        "thread_id": st.session_state.thread_id,
+                    },
+                    timeout=120,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                response = data["response"]
+                st.session_state.thread_id = data["thread_id"]
+            except requests.ConnectionError:
+                response = (
+                    "**Agent service unavailable.** "
+                    "Make sure the FastAPI backend is running at "
+                    f"`{AGENT_API_URL}`."
+                )
+            except requests.RequestException as exc:
+                response = f"**Error communicating with agent service:** {exc}"
         st.markdown(response)
 
     st.session_state.messages.append({"role": "assistant", "content": response})

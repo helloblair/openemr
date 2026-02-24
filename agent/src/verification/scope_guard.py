@@ -40,10 +40,12 @@ TREATMENT_KEYWORDS: list[str] = [
 
 CLINICAL_SUPPORT_KEYWORDS: list[str] = [
     "interaction",
+    "interactions",
     "allergy",
     "allergies",
     "allergic",
     "medication",
+    "medications",
     "drug",
     "prescription",
 ]

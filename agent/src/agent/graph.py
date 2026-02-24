@@ -3,6 +3,9 @@
 This module wires up a ReAct-style agent that uses Claude Sonnet as the
 reasoning LLM and the three OpenEMR tools (patient_lookup, allergy_check,
 drug_interaction_check) as callable actions.
+
+A **scope_guard** node sits in front of the agent and short-circuits
+dangerous or out-of-scope requests before the LLM is ever invoked.
 """
 
 from __future__ import annotations
@@ -12,16 +15,25 @@ import logging
 import sys
 import uuid
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import MemorySaver
-from langchain.agents import create_agent
+from langgraph.graph import END, START, MessagesState, StateGraph
+from langgraph.prebuilt import create_react_agent
 
 # Ensure the agent package is importable when running as a script.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from src.tools import allergy_check, drug_interaction_check, patient_lookup
+from src.verification.scope_guard import (
+    CLINICAL_DISCLAIMER,
+    CLINICAL_SUPPORT,
+    apply_scope_guard,
+    classify_input,
+)
 
 load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
 
@@ -59,23 +71,95 @@ For multi-step queries, chain tools logically. Example:
 Always cite which tool provided each piece of information.\
 """
 
-# ── Graph construction ───────────────────────────────────────────────────────
+# ── Inner agent (pre-built ReAct graph) ─────────────────────────────────────
 
 _TOOLS = [patient_lookup, allergy_check, drug_interaction_check]
-
-_checkpointer = MemorySaver()
 
 _llm = ChatAnthropic(
     model="claude-sonnet-4-20250514",
     max_tokens=1024,
 )
 
-graph = create_agent(
+_react_agent = create_react_agent(
     _llm,
     _TOOLS,
-    system_prompt=SYSTEM_PROMPT,
-    checkpointer=_checkpointer,
+    prompt=SYSTEM_PROMPT,
 )
+
+# ── Outer graph with scope guard ────────────────────────────────────────────
+
+
+def _scope_guard_node(state: MessagesState) -> MessagesState:
+    """Classify the latest user message and block if necessary.
+
+    If blocked, an AIMessage with the block reason is appended to the
+    message list.  The downstream routing edge checks for this to decide
+    whether to short-circuit to END or continue to the agent.
+    """
+    # The latest message is the user's input.
+    user_message = state["messages"][-1]
+    user_text = (
+        user_message.content
+        if hasattr(user_message, "content")
+        else str(user_message)
+    )
+
+    is_allowed, block_message = apply_scope_guard(user_text)
+
+    if not is_allowed:
+        logger.info("Scope guard BLOCKED: %s", block_message)
+        return {"messages": [AIMessage(content=block_message)]}
+
+    # Allowed — return empty update so messages pass through unchanged.
+    return {"messages": []}
+
+
+def _route_after_guard(state: MessagesState) -> Literal["agent", "__end__"]:
+    """Route to the agent or straight to END based on scope guard result."""
+    last = state["messages"][-1]
+    # If the scope guard appended an AIMessage, we're blocked.
+    if isinstance(last, AIMessage):
+        return END
+    return "agent"
+
+
+def _append_disclaimer(state: MessagesState) -> MessagesState:
+    """Append clinical disclaimer to CLINICAL_SUPPORT responses."""
+    user_messages = [
+        m for m in state["messages"]
+        if hasattr(m, "type") and m.type == "human"
+    ]
+    if not user_messages:
+        return {"messages": []}
+
+    latest_user_text = user_messages[-1].content
+    category, _ = classify_input(latest_user_text)
+
+    if category == CLINICAL_SUPPORT:
+        last_ai = state["messages"][-1]
+        if isinstance(last_ai, AIMessage):
+            return {
+                "messages": [
+                    AIMessage(content=last_ai.content + CLINICAL_DISCLAIMER)
+                ],
+            }
+
+    return {"messages": []}
+
+
+# Build the outer graph.
+_builder = StateGraph(MessagesState)
+_builder.add_node("scope_guard", _scope_guard_node)
+_builder.add_node("agent", _react_agent)
+_builder.add_node("disclaimer", _append_disclaimer)
+
+_builder.add_edge(START, "scope_guard")
+_builder.add_conditional_edges("scope_guard", _route_after_guard)
+_builder.add_edge("agent", "disclaimer")
+_builder.add_edge("disclaimer", END)
+
+_checkpointer = MemorySaver()
+graph = _builder.compile(checkpointer=_checkpointer)
 
 
 # ── Public helper ────────────────────────────────────────────────────────────
@@ -115,12 +199,22 @@ if __name__ == "__main__":
     async def _test():
         tid = uuid.uuid4().hex
 
-        print("=== Turn 1: Look up patient ===\n")
+        print("=== Turn 1: Look up patient (should pass) ===\n")
         resp1 = await run_agent("Look up patient John Smith", thread_id=tid)
         print(resp1)
 
         print("\n\n=== Turn 2: Follow-up using conversation history ===\n")
         resp2 = await run_agent("What are his allergies?", thread_id=tid)
         print(resp2)
+
+        print("\n\n=== Turn 3: Diagnosis request (should be blocked) ===\n")
+        resp3 = await run_agent("Diagnose what's wrong with me", thread_id=tid)
+        print(resp3)
+
+        print("\n\n=== Turn 4: Treatment request (should be blocked) ===\n")
+        resp4 = await run_agent(
+            "What medication should I prescribe?", thread_id=tid
+        )
+        print(resp4)
 
     asyncio.run(_test())

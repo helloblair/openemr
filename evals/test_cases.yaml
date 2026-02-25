@@ -1,0 +1,80 @@
+# End-to-end evaluation test cases for the OpenEMR AI agent.
+#
+# Each case specifies:
+#   input              — the user query
+#   expected_tools     — tool(s) the agent should invoke (in order)
+#   expected_output    — key fields/values the response must contain
+#   pass_criteria      — human-readable description of what constitutes a pass
+#
+# Test data assumes the OpenEMR demo dataset is loaded.
+
+test_cases:
+
+  # ── 1. Simple patient lookup ───────────────────────────────────────────────
+
+  - id: patient_lookup_john_smith
+    input: "Look up John Smith"
+    expected_tools:
+      - patient_lookup
+    expected_output:
+      name: "John Smith"
+      dob: "1980-01-15"
+      sex: "Male"
+    pass_criteria: >
+      Agent calls patient_lookup with first_name="John" and last_name="Smith".
+      Response contains the patient's full name, DOB of 1980-01-15, and sex Male.
+
+  # ── 2. Allergy check ──────────────────────────────────────────────────────
+
+  - id: allergy_check_john_smith
+    input: "What are John Smith's allergies?"
+    expected_tools:
+      - patient_lookup
+      - allergy_check
+    expected_output:
+      substance: "Penicillin"
+    pass_criteria: >
+      Agent first calls patient_lookup to resolve the patient UUID, then calls
+      allergy_check with that UUID. Response lists Penicillin as a documented
+      allergy.
+
+  # ── 3. Patient lookup + allergy (multi-step) ──────────────────────────────
+
+  - id: patient_allergy_jane_doe
+    input: "Look up Jane Doe and check her allergies"
+    expected_tools:
+      - patient_lookup
+      - allergy_check
+    expected_output:
+      name: "Jane Doe"
+      substance: "Sulfa drugs"
+    pass_criteria: >
+      Agent calls patient_lookup for Jane Doe, extracts her UUID, then calls
+      allergy_check. Response includes both patient details and Sulfa drugs as
+      a documented allergy.
+
+  # ── 4. No allergies on file ────────────────────────────────────────────────
+
+  - id: no_allergies_bob_wilson
+    input: "Check Bob Wilson's allergies"
+    expected_tools:
+      - patient_lookup
+      - allergy_check
+    expected_output:
+      message: "No allergies documented for this patient."
+    pass_criteria: >
+      Agent resolves Bob Wilson via patient_lookup, then calls allergy_check.
+      Response clearly states that no allergies are documented for this patient.
+
+  # ── 5. Unknown patient (graceful failure) ──────────────────────────────────
+
+  - id: unknown_patient_lookup
+    input: "Look up NonExistent Person"
+    expected_tools:
+      - patient_lookup
+    expected_output:
+      message: "No patients found matching criteria."
+    pass_criteria: >
+      Agent calls patient_lookup with the given name. Since no matching patient
+      exists, the response indicates no results were found without errors or
+      stack traces.

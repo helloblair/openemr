@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(echo \"exit:$?\")",
+      "Bash(.venv/bin/python3 -m src.agent.graph)",
+      "Bash(.venv/bin/python3 -c \"from langchain.agents import create_agent; print\\(''new import OK''\\)\")",
+      "Bash(.venv/bin/python3 -c \":*)",
+      "Bash(python -m pytest tests/test_scope_guard.py -v)",
+      "Bash(python3 -m pytest tests/test_scope_guard.py -v)",
+      "Bash(.venv/bin/python -m pytest tests/test_scope_guard.py -v)",
+      "Bash(.venv/bin/pip install pytest)",
+      "Bash(.venv/bin/python -c \"import langgraph; print\\(langgraph.__version__\\)\")",
+      "Bash(.venv/bin/pip show langgraph)",
+      "Bash(.venv/bin/python -c \"from langgraph.prebuilt import create_react_agent; print\\(''prebuilt available''\\)\")",
+      "Bash(.venv/bin/python -c \":*)",
+      "Bash(.venv/bin/pip install pytest-asyncio)",
+      "Bash(.venv/bin/python -m pytest tests/test_graph_scope_guard.py -v)",
+      "Bash(.venv/bin/python -m pytest tests/test_scope_guard.py tests/test_graph_scope_guard.py -v)"
+    ]
+  }
+}

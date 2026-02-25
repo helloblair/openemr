@@ -18,5 +18,5 @@ OPENEMR_USERNAME: str = os.environ.get("OPENEMR_USERNAME", "admin")
 OPENEMR_PASSWORD: str = os.environ.get("OPENEMR_PASSWORD", "pass")
 OPENEMR_SCOPES: str = os.environ.get(
     "OPENEMR_SCOPES",
-    "openid api:oemr api:fhir",
+    "openid api:oemr api:fhir user/patient.read user/allergy.read",
 )

@@ -63,6 +63,10 @@ npm run build
 composer dump-autoload -o
 ```
 
+## Evaluations
+
+Agent evaluation test cases are defined in [evals/test_cases.yaml](evals/test_cases.yaml).
+
 ### Contributors
 
 This project exists thanks to all the people who have contributed. [[Contribute]](CONTRIBUTING.md).

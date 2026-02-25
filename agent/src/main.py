@@ -32,6 +32,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     thread_id: str
+    tools_used: list[str] = []
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
@@ -40,8 +41,12 @@ class ChatResponse(BaseModel):
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     thread_id = req.thread_id or uuid.uuid4().hex
-    response = await run_agent(req.message, thread_id=thread_id)
-    return ChatResponse(response=response, thread_id=thread_id)
+    result = await run_agent(req.message, thread_id=thread_id)
+    return ChatResponse(
+        response=result["response"],
+        thread_id=thread_id,
+        tools_used=result["tools_used"],
+    )
 
 
 @app.get("/health")

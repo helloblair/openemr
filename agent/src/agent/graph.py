@@ -164,7 +164,9 @@ graph = _builder.compile(checkpointer=_checkpointer)
 
 # ── Public helper ────────────────────────────────────────────────────────────
 
-async def run_agent(user_input: str, thread_id: str | None = None) -> str:
+async def run_agent(
+    user_input: str, thread_id: str | None = None
+) -> dict[str, str | list[str]]:
     """Send a message to the agent and return the final text response.
 
     Args:
@@ -174,21 +176,37 @@ async def run_agent(user_input: str, thread_id: str | None = None) -> str:
                     UUID is generated when *None*.
 
     Returns:
-        The assistant's final text reply.
+        A dict with ``response`` (str) and ``tools_used`` (list of tool
+        name strings invoked during this turn).
     """
     if thread_id is None:
         thread_id = uuid.uuid4().hex
 
     config = {"configurable": {"thread_id": thread_id}}
 
+    # Count messages *before* this turn so we can isolate new ones.
+    snapshot_before = await graph.aget_state(config)
+    prev_count = len(snapshot_before.values.get("messages", []))
+
     result = await graph.ainvoke(
         {"messages": [("user", user_input)]},
         config=config,
     )
 
+    # Extract tool names from messages added during this turn.
+    all_messages = result["messages"]
+    new_messages = all_messages[prev_count:]
+    tools_used: list[str] = []
+    for msg in new_messages:
+        if hasattr(msg, "tool_calls") and msg.tool_calls:
+            for tc in msg.tool_calls:
+                name = tc.get("name") or tc.get("function", {}).get("name", "")
+                if name and name not in tools_used:
+                    tools_used.append(name)
+
     # The last message in the list is the assistant's final reply.
-    ai_message = result["messages"][-1]
-    return ai_message.content
+    ai_message = all_messages[-1]
+    return {"response": ai_message.content, "tools_used": tools_used}
 
 
 # ── Standalone test ──────────────────────────────────────────────────────────
@@ -200,21 +218,25 @@ if __name__ == "__main__":
         tid = uuid.uuid4().hex
 
         print("=== Turn 1: Look up patient (should pass) ===\n")
-        resp1 = await run_agent("Look up patient John Smith", thread_id=tid)
-        print(resp1)
+        result1 = await run_agent("Look up patient John Smith", thread_id=tid)
+        print(result1["response"])
+        print(f"Tools used: {result1['tools_used']}")
 
         print("\n\n=== Turn 2: Follow-up using conversation history ===\n")
-        resp2 = await run_agent("What are his allergies?", thread_id=tid)
-        print(resp2)
+        result2 = await run_agent("What are his allergies?", thread_id=tid)
+        print(result2["response"])
+        print(f"Tools used: {result2['tools_used']}")
 
         print("\n\n=== Turn 3: Diagnosis request (should be blocked) ===\n")
-        resp3 = await run_agent("Diagnose what's wrong with me", thread_id=tid)
-        print(resp3)
+        result3 = await run_agent("Diagnose what's wrong with me", thread_id=tid)
+        print(result3["response"])
+        print(f"Tools used: {result3['tools_used']}")
 
         print("\n\n=== Turn 4: Treatment request (should be blocked) ===\n")
-        resp4 = await run_agent(
+        result4 = await run_agent(
             "What medication should I prescribe?", thread_id=tid
         )
-        print(resp4)
+        print(result4["response"])
+        print(f"Tools used: {result4['tools_used']}")
 
     asyncio.run(_test())

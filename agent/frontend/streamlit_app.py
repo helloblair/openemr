@@ -44,6 +44,10 @@ if "messages" not in st.session_state:
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
+        if msg.get("tools_used"):
+            with st.expander("🔧 Tools called"):
+                for tool in msg["tools_used"]:
+                    st.code(tool)
 
 # ── Handle user input ───────────────────────────────────────────────────────
 
@@ -68,6 +72,7 @@ if prompt := st.chat_input("Ask the healthcare agent…"):
                 resp.raise_for_status()
                 data = resp.json()
                 response = data["response"]
+                tools_used = data.get("tools_used", [])
                 st.session_state.thread_id = data["thread_id"]
             except requests.ConnectionError:
                 response = (
@@ -75,8 +80,16 @@ if prompt := st.chat_input("Ask the healthcare agent…"):
                     "Make sure the FastAPI backend is running at "
                     f"`{AGENT_API_URL}`."
                 )
+                tools_used = []
             except requests.RequestException as exc:
                 response = f"**Error communicating with agent service:** {exc}"
+                tools_used = []
         st.markdown(response)
+        if tools_used:
+            with st.expander("🔧 Tools called"):
+                for tool in tools_used:
+                    st.code(tool)
 
-    st.session_state.messages.append({"role": "assistant", "content": response})
+    st.session_state.messages.append(
+        {"role": "assistant", "content": response, "tools_used": tools_used}
+    )

@@ -18,11 +18,5 @@ OPENEMR_USERNAME: str = os.environ.get("OPENEMR_USERNAME", "admin")
 OPENEMR_PASSWORD: str = os.environ.get("OPENEMR_PASSWORD", "pass")
 OPENEMR_SCOPES: str = os.environ.get(
     "OPENEMR_SCOPES",
-    # FHIR scopes (for /fhir/* endpoints)
-    "openid api:oemr api:fhir "
-    "user/Patient.rs user/AllergyIntolerance.rs "
-    "user/MedicationRequest.rs user/Practitioner.rs user/Coverage.rs "
-    # Standard API scopes (for /api/* endpoints)
-    "user/patient.crus user/allergy.cruds user/medication.cruds "
-    "user/practitioner.crus user/insurance.crus",
+    "openid api:oemr api:fhir",
 )
